@@ -540,7 +540,7 @@ impl Element for VirtualList {
                                                     }
                                                 },
                                             );
-                                            size.height = known_dimensions.width.unwrap_or(
+                                            size.height = known_dimensions.height.unwrap_or(
                                                 match available_space.height {
                                                     AvailableSpace::Definite(x) => x,
                                                     AvailableSpace::MinContent
@@ -768,7 +768,7 @@ impl Element for VirtualList {
 mod tests {
     use super::*;
 
-    use gpui::{Context, TestAppContext};
+    use gpui::{Context, ParentElement as _, TestAppContext};
 
     struct VirtualListHarness {
         axis: Axis,
@@ -884,6 +884,44 @@ mod tests {
     #[gpui::test]
     fn horizontal_visible_range_and_deferred_scroll_are_preserved(cx: &mut TestAppContext) {
         exercise_axis(cx, Axis::Horizontal);
+    }
+
+    #[gpui::test]
+    fn a_horizontal_list_infers_its_height_from_its_items(cx: &mut TestAppContext) {
+        struct InferHarness;
+
+        impl Render for InferHarness {
+            fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+                div()
+                    .flex()
+                    .flex_col()
+                    .items_start()
+                    .w(px(120.))
+                    .child(
+                        virtual_list(
+                            cx.entity(),
+                            "virtual-list-infer",
+                            Axis::Horizontal,
+                            Rc::new(vec![size(px(30.), px(10.)); 3]),
+                            |_, visible_range, _, _| {
+                                visible_range
+                                    .map(|_| div().w(px(30.)).h(px(10.)))
+                                    .collect::<Vec<_>>()
+                            },
+                        )
+                        .with_sizing_behavior(ListSizingBehavior::Infer)
+                        .w(px(120.))
+                        .h_auto()
+                        .flex_none(),
+                    )
+                    .child(div().size(px(1.)).debug_selector(|| "after-list".into()))
+            }
+        }
+
+        let (_, cx) = cx.add_window_view(|_, _| InferHarness);
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+        // The list is as tall as its items, not as wide as itself.
+        assert_eq!(cx.debug_bounds("after-list").unwrap().top(), px(10.));
     }
 
     #[gpui::test]
