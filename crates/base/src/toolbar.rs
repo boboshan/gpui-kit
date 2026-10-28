@@ -6,7 +6,7 @@ use gpui::{
 };
 use smallvec::SmallVec;
 
-use crate::StyledExt as _;
+use crate::{StyledExt as _, TestSupportExt as _};
 
 /// Upper bound on tab-stop hops when wrapping focus back into the toolbar, so
 /// a toolbar whose items all vanished from the tab order can never hang the
@@ -44,7 +44,7 @@ const MAX_FOCUS_ATTEMPTS: usize = 100;
 #[derive(IntoElement)]
 pub struct Toolbar {
     id: ElementId,
-    base: Stateful<Div>,
+    base: crate::ObservedElement<Stateful<Div>>,
     style: StyleRefinement,
     disabled: bool,
     children: SmallVec<[AnyElement; 4]>,
@@ -54,7 +54,7 @@ impl Toolbar {
     pub fn new(id: impl Into<ElementId>) -> Self {
         let id = id.into();
         Self {
-            base: div().id(id.clone()),
+            base: div().id(id.clone()).test_support(),
             style: StyleRefinement::default(),
             disabled: false,
             children: SmallVec::new(),
@@ -392,6 +392,35 @@ mod tests {
 
             cx.simulate_keystrokes("right left right");
             assert_focused(cx, &item, "the only item");
+        }
+
+        #[gpui::test]
+        fn snapshot_reports_the_toolbar_role_label_and_focus(cx: &mut gpui::TestAppContext) {
+            struct Labelled(FocusHandle);
+
+            impl Render for Labelled {
+                fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+                    Toolbar::new("formatting")
+                        .aria_label("Formatting")
+                        .child(div().id("bold").size(px(20.)).track_focus(&self.0))
+                }
+            }
+
+            let (_, cx) = cx.add_window_view(|window, cx| {
+                let item = cx.focus_handle().tab_stop(true);
+                item.focus(window, cx);
+                Labelled(item)
+            });
+            cx.update(|window, cx| {
+                window.draw(cx).clear(cx);
+                let snapshot = crate::test_support::find(window, &[], &"formatting".into())
+                    .expect("the toolbar is observed");
+                assert_eq!(snapshot.role(), Some(Role::Toolbar));
+                assert_eq!(snapshot.label(), Some("Formatting"));
+                // The toolbar's handle is not a tab stop; it reports focus
+                // while one of its items holds it.
+                assert_eq!(snapshot.focused(), Some(true));
+            });
         }
 
         #[gpui::test]
